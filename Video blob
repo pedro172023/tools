@@ -1,0 +1,143 @@
+import { Component } from '@angular/core';
+import { NavController, AlertController, LoadingController} from 'ionic-angular';
+import { Camera, CameraOptions } from '@ionic-native/camera';
+import { File, FileEntry } from '@ionic-native/file';
+import { FileTransfer, FileUploadOptions, FileTransferObject } from '@ionic-native/file-transfer';
+import { HttpClient } from '@angular/common/http';
+import { ConditionalExpr } from '@angular/compiler';
+const MAX_FILE_SIZE = 100 * 1024 * 1024;
+const ALLOWED_MIME_TYPE = "video/mp4";
+
+@Component({
+  selector: 'page-home',
+  templateUrl: 'home.html'
+})
+export class HomePage {
+
+  constructor(
+    public http:HttpClient,
+    public navCtrl: NavController, private camera: Camera,
+    private transfer: FileTransfer, private file: File,
+    private alertCtrl: AlertController, private loadingCtrl: LoadingController
+    ) {
+
+  }
+
+  selectedVideo: any; //= "https://res.cloudinary.com/demo/video/upload/w_640,h_640,c_pad/dog.mp4";
+  uploadedVideo: string;
+
+  isUploading: boolean = false;
+  uploadPercent: number = 0;
+  videoFileUpload: FileTransferObject;
+  loader;
+
+  showLoader() {
+    this.loader = this.loadingCtrl.create({
+      content: 'Please wait...'
+    });
+    this.loader.present();
+  }
+
+  dismissLoader() {
+    this.loader.dismiss();
+  }
+
+  presentAlert(title, message) {
+    let alert = this.alertCtrl.create({
+      title: title,
+      subTitle: message,
+      buttons: ['Dismiss']
+    });
+    alert.present();
+  }
+
+  cancelSelection() {
+    this.selectedVideo = null;
+    this.uploadedVideo = null;
+  }
+
+  selectVideo() {
+    const options: CameraOptions = {
+      mediaType: this.camera.MediaType.VIDEO,
+      sourceType: this.camera.PictureSourceType.PHOTOLIBRARY
+    }
+
+    this.camera.getPicture(options)
+      .then( async (videoUrl) => {
+console.log(videoUrl);
+
+
+        if (videoUrl) {
+          this.showLoader();
+          this.uploadedVideo = null;
+          
+          var filename = videoUrl.substr(videoUrl.lastIndexOf('/') + 1);
+          var dirpath = videoUrl.substr(0, videoUrl.lastIndexOf('/') + 1);
+
+          dirpath = dirpath.includes("file://") ? dirpath : "file://" + dirpath;
+          
+          try {
+            var dirUrl = await this.file.resolveDirectoryUrl(dirpath);
+            var retrievedFile = await this.file.getFile(dirUrl, filename, {});
+
+          } catch(err) {
+            this.dismissLoader();
+            return this.presentAlert("Error","Something went wrong.");
+          }
+          
+          retrievedFile.file( data => {
+          
+            
+              this.dismissLoader();
+              if (data.size > MAX_FILE_SIZE) return this.presentAlert("Error", "You cannot upload more than 5mb.");
+              if (data.type !== ALLOWED_MIME_TYPE) return this.presentAlert("Error", "Incorrect file type.");
+              this.selectedVideo = data;
+              
+          });
+        }
+      },
+      (err) => {
+        console.log(err);
+      });
+  }
+
+  uploadVideo() {
+    console.log(this.selectedVideo);
+    this.file.resolveLocalFilesystemUrl(this.selectedVideo.localURL)
+        .then(entry => {
+            ( < FileEntry > entry).file(file => this.readFile(file))
+        })
+        .catch(err => {
+            console.log('Error while reading file.');
+        });
+}
+ 
+readFile(file: any) {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+        const formData = new FormData();
+        const imgBlob = new Blob([reader.result], {
+            type: file.type
+        });
+        formData.append('file', imgBlob);
+        formData.append('file_name', file.name);
+        this.uploadImageData(formData);
+    };
+    reader.readAsArrayBuffer(file);
+}
+ 
+async uploadImageData(formData: FormData) {
+  var url = "http://192.168.15.16:8069/api/appre/beneficiario/uploaded_video";
+ 
+    this.http.post(url, formData)
+        .pipe(
+        )
+        .subscribe(res => {
+            if (res['success']) {
+                console.log('File upload complete.')
+            } else {
+                console.log('File upload failed.')
+            }
+        });
+}
+}
